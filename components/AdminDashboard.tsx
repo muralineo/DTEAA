@@ -5,14 +5,19 @@ import type { UserData } from '../types';
 interface Props {
   users: UserData[];
   onVerify: (userId: string) => Promise<void>;
+  onReject: (userId: string, comments: string) => Promise<void>;
 }
 
 /**
  * AdminDashboard with search & filter and client-side debounce
  */
-const AdminDashboard: React.FC<Props> = ({ users = [], onVerify }) => {
+const AdminDashboard: React.FC<Props> = ({ users = [], onVerify, onReject }) => {
   const [selected, setSelected] = useState<UserData | null>(null);
   const [verifying, setVerifying] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<string | null>(null);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectUserId, setRejectUserId] = useState<string | null>(null);
+  const [rejectionComments, setRejectionComments] = useState('');
 
   // Search & filter state
   const [query, setQuery] = useState<string>('');
@@ -72,6 +77,36 @@ const AdminDashboard: React.FC<Props> = ({ users = [], onVerify }) => {
       console.error('verify failed', err);
     } finally {
       setVerifying(null);
+    }
+  };
+
+  const openRejectModal = (userId: string) => {
+    setRejectUserId(userId);
+    setRejectionComments('');
+    setRejectModalOpen(true);
+  };
+
+  const handleReject = async () => {
+    if (!rejectUserId || !rejectionComments.trim()) {
+      alert('Please enter rejection comments');
+      return;
+    }
+    
+    setRejecting(rejectUserId);
+    try {
+      await onReject(rejectUserId, rejectionComments.trim());
+      setRejectModalOpen(false);
+      setRejectionComments('');
+      setRejectUserId(null);
+      // update selected if modal is open
+      if (selected && selected.id === rejectUserId) {
+        setSelected(prev => prev ? { ...prev, status: 'rejected', rejectionComments: rejectionComments.trim() } : prev);
+      }
+    } catch (err) {
+      console.error('reject failed', err);
+      alert('Failed to reject user. Please try again.');
+    } finally {
+      setRejecting(null);
     }
   };
 
@@ -143,6 +178,24 @@ const AdminDashboard: React.FC<Props> = ({ users = [], onVerify }) => {
                 className="flex items-center justify-between p-3 border rounded-lg bg-[#FFF9F0] hover:bg-[#FFF5E2] transition"
               >
                 <div className="flex items-center space-x-4 cursor-pointer" onClick={() => setSelected(user)}>
+                  {/* Profile Picture */}
+                  <div className="flex-shrink-0">
+                    {user.personal.profilePhoto ? (
+                      <img
+                        src={user.personal.profilePhoto}
+                        alt={`${user.personal.firstName} ${user.personal.lastName}`}
+                        className="w-12 h-12 rounded-full object-cover border-2 border-[#E7A700]"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#E7A700] to-[#CF9500] flex items-center justify-center text-white font-bold text-lg">
+                        {(user.personal.firstName?.charAt(0) || '') + (user.personal.lastName?.charAt(0) || '')}
+                      </div>
+                    )}
+                  </div>
+                  
                   <div>
                     <div className="font-semibold text-[#2E2E2E]">
                       {user.personal.firstName} {user.personal.lastName}
@@ -164,8 +217,8 @@ const AdminDashboard: React.FC<Props> = ({ users = [], onVerify }) => {
                   )}
                 </div>
 
-                <div className="flex items-center space-x-3">
-                  <div className="text-sm mr-4 text-right">
+                <div className="flex items-center space-x-2">
+                  <div className="text-sm mr-2 text-right">
                     <div className="text-xs text-gray-500">Payment Receipt:</div>
                     <div className={`text-sm ${user.payment_receipt ? 'text-green-700' : 'text-red-500'}`}>
                       {user.payment_receipt ? 'Uploaded' : 'Missing'}
@@ -173,10 +226,16 @@ const AdminDashboard: React.FC<Props> = ({ users = [], onVerify }) => {
                   </div>
                   <button
                     onClick={() => handleVerify(user.id)}
-                    className={`px-4 py-2 rounded text-white ${verifying === user.id ? 'bg-green-700' : 'bg-green-600 hover:bg-green-700'}`}
+                    className={`px-3 py-2 rounded text-white text-sm ${verifying === user.id ? 'bg-green-700' : 'bg-green-600 hover:bg-green-700'}`}
                     disabled={verifying === user.id}
                   >
-                    {verifying === user.id ? 'Approving...' : 'Verify & Approve'}
+                    {verifying === user.id ? 'Approving...' : 'Approve'}
+                  </button>
+                  <button
+                    onClick={() => openRejectModal(user.id)}
+                    className="px-3 py-2 rounded text-white text-sm bg-red-600 hover:bg-red-700"
+                  >
+                    Reject
                   </button>
                 </div>
               </div>
@@ -201,11 +260,31 @@ const AdminDashboard: React.FC<Props> = ({ users = [], onVerify }) => {
                 className="p-3 border rounded-lg bg-white flex items-center justify-between hover:bg-gray-50 cursor-pointer"
                 onClick={() => setSelected(user)}
               >
-                <div>
-                  <div className="font-semibold text-[#2E2E2E]">
-                    {user.personal.firstName} {user.personal.lastName}
+                <div className="flex items-center space-x-3">
+                  {/* Profile Picture */}
+                  <div className="flex-shrink-0">
+                    {user.personal.profilePhoto ? (
+                      <img
+                        src={user.personal.profilePhoto}
+                        alt={`${user.personal.firstName} ${user.personal.lastName}`}
+                        className="w-12 h-12 rounded-full object-cover border-2 border-green-500"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white font-bold text-lg">
+                        {(user.personal.firstName?.charAt(0) || '') + (user.personal.lastName?.charAt(0) || '')}
+                      </div>
+                    )}
                   </div>
-                  <div className="text-sm text-gray-500">{user.personal.email}</div>
+                  
+                  <div>
+                    <div className="font-semibold text-[#2E2E2E]">
+                      {user.personal.firstName} {user.personal.lastName}
+                    </div>
+                    <div className="text-sm text-gray-500">{user.personal.email}</div>
+                  </div>
                 </div>
                 <div className="text-sm text-green-600 font-medium">Verified</div>
               </div>
@@ -225,10 +304,37 @@ const AdminDashboard: React.FC<Props> = ({ users = [], onVerify }) => {
               ✕
             </button>
 
-            <h3 className="text-xl font-semibold mb-1 text-[#2E2E2E]">
-              {selected.personal.firstName} {selected.personal.lastName}
-            </h3>
-            <div className="text-sm text-gray-500 mb-4">{selected.personal.email}</div>
+            {/* Modal Header with Profile Picture */}
+            <div className="flex items-center gap-4 mb-6">
+              {/* Profile Picture */}
+              <div className="flex-shrink-0">
+                {selected.personal.profilePhoto ? (
+                  <img
+                    src={selected.personal.profilePhoto}
+                    alt={`${selected.personal.firstName} ${selected.personal.lastName}`}
+                    className="w-20 h-20 rounded-full object-cover border-4 border-[#E7A700] shadow-lg"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#E7A700] to-[#CF9500] flex items-center justify-center text-white font-bold text-2xl shadow-lg">
+                    {(selected.personal.firstName?.charAt(0) || '') + (selected.personal.lastName?.charAt(0) || '')}
+                  </div>
+                )}
+              </div>
+              
+              {/* User Info */}
+              <div>
+                <h3 className="text-xl font-semibold text-[#2E2E2E]">
+                  {selected.personal.firstName} {selected.personal.lastName}
+                </h3>
+                <div className="text-sm text-gray-500">{selected.personal.email}</div>
+                {selected.alumniId && (
+                  <div className="text-sm font-medium text-[#E7A700] mt-1">ID: {selected.alumniId}</div>
+                )}
+              </div>
+            </div>
 
             {/* Personal + Contact */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -241,8 +347,20 @@ const AdminDashboard: React.FC<Props> = ({ users = [], onVerify }) => {
               </div>
               <div>
                 <h4 className="font-semibold mb-1">Contact Details</h4>
-                <p><b>Address:</b> {selected.contact.address || '—'}</p>
-                <p><b>City:</b> {selected.contact.city || '—'}</p>
+                <p><b>Present Address:</b> {[
+                  selected.contact.presentAddress?.city,
+                  selected.contact.presentAddress?.state,
+                  selected.contact.presentAddress?.country
+                ].filter(Boolean).join(', ') || '—'}{selected.contact.presentAddress?.pincode ? ` - ${selected.contact.presentAddress.pincode}` : ''}</p>
+                {selected.contact.sameAsPresentAddress ? (
+                  <p><b>Permanent Address:</b> Same as present address</p>
+                ) : (
+                  <p><b>Permanent Address:</b> {[
+                    selected.contact.permanentAddress?.city,
+                    selected.contact.permanentAddress?.state,
+                    selected.contact.permanentAddress?.country
+                  ].filter(Boolean).join(', ') || '—'}{selected.contact.permanentAddress?.pincode ? ` - ${selected.contact.permanentAddress.pincode}` : ''}</p>
+                )}
                 <p><b>Mobile:</b> {selected.contact.mobile || '—'}</p>
               </div>
             </div>
@@ -264,6 +382,9 @@ const AdminDashboard: React.FC<Props> = ({ users = [], onVerify }) => {
                       <p className="text-sm text-gray-600">
                         {exp.startDate || '—'} - {exp.isCurrentEmployer ? 'Present' : exp.endDate || '—'}
                       </p>
+                      <p className="text-sm text-gray-600">
+                        {[exp.city, exp.state, exp.country].filter(Boolean).join(', ') || '—'}
+                      </p>
                     </div>
                   ))}
                 </>
@@ -281,6 +402,7 @@ const AdminDashboard: React.FC<Props> = ({ users = [], onVerify }) => {
                     >
                       <p className="font-semibold text-[#2E2E2E]">{exp.companyName}</p>
                       <p className="text-sm text-gray-600">{exp.natureOfBusiness}</p>
+                      <p className="text-sm text-gray-600">{[exp.city, exp.state, exp.country].filter(Boolean).join(', ') || '—'}</p>
                     </div>
                   ))}
                 </>
@@ -330,15 +452,80 @@ const AdminDashboard: React.FC<Props> = ({ users = [], onVerify }) => {
               </div>
               <div className="flex space-x-2">
                 {selected.status !== 'verified' && (
-                  <button
-                    onClick={() => handleVerify(selected.id)}
-                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                  >
-                    {verifying === selected.id ? 'Approving...' : 'Verify & Approve'}
-                  </button>
+                  <>
+                    <button
+                      onClick={() => handleVerify(selected.id)}
+                      className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                    >
+                      {verifying === selected.id ? 'Approving...' : 'Approve'}
+                    </button>
+                    <button
+                      onClick={() => { openRejectModal(selected.id); setSelected(null); }}
+                      className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                    >
+                      Reject
+                    </button>
+                  </>
                 )}
                 <button onClick={() => setSelected(null)} className="px-3 py-2 border rounded">Close</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rejection Modal */}
+      {rejectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-md p-6 relative">
+            <button
+              className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
+              onClick={() => {
+                setRejectModalOpen(false);
+                setRejectionComments('');
+                setRejectUserId(null);
+              }}
+            >
+              ✕
+            </button>
+
+            <h3 className="text-xl font-semibold mb-4 text-red-600">Reject Registration</h3>
+            
+            <p className="text-sm text-gray-600 mb-4">
+              Please provide a reason for rejecting this registration. The user will see this message when they log in.
+            </p>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Rejection Comments <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={rejectionComments}
+                onChange={(e) => setRejectionComments(e.target.value)}
+                placeholder="e.g., Payment receipt is unclear, please upload a clearer image..."
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              />
+            </div>
+
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setRejectModalOpen(false);
+                  setRejectionComments('');
+                  setRejectUserId(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReject}
+                disabled={rejecting !== null || !rejectionComments.trim()}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {rejecting ? 'Rejecting...' : 'Confirm Rejection'}
+              </button>
             </div>
           </div>
         </div>

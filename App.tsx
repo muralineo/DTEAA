@@ -28,11 +28,19 @@ const initialUserData: UserData = {
     profilePhoto: '',
   },
   contact: {
-    address: '',
-    city: '',
-    state: '',
-    pincode: '',
-    country: '',
+    presentAddress: {
+      city: '',
+      state: '',
+      pincode: '',
+      country: '',
+    },
+    permanentAddress: {
+      city: '',
+      state: '',
+      pincode: '',
+      country: '',
+    },
+    sameAsPresentAddress: false,
     mobile: '',
     telephone: '',
   },
@@ -80,6 +88,7 @@ const App: React.FC = () => {
         role: (data.role as any) || 'user',
         alumniId: (data.alumni_id ?? (data.alumniId as any)) || '',
         status: data.status || 'pending',
+        rejectionComments: data.rejection_comments || '',
         paymentReceipt: data.payment_receipt ?? (data.paymentReceipt as any) ?? '',
         personal: {
           ...(data.personal ?? {
@@ -98,11 +107,19 @@ const App: React.FC = () => {
           profilePhoto: data.profile_photo || data.personal?.profilePhoto || '',
         },
         contact: data.contact ?? {
-          address: '',
-          city: '',
-          state: '',
-          pincode: '',
-          country: '',
+          presentAddress: {
+            city: '',
+            state: '',
+            pincode: '',
+            country: '',
+          },
+          permanentAddress: {
+            city: '',
+            state: '',
+            pincode: '',
+            country: '',
+          },
+          sameAsPresentAddress: false,
           mobile: '',
           telephone: '',
         },
@@ -175,6 +192,89 @@ const App: React.FC = () => {
         return false;
       } catch {
         return false;
+      }
+    };
+
+    // Setup real-time profile updates subscription
+    const setupProfileSubscription = (userId: string) => {
+      try {
+        profileSubscription = supabase
+          .channel('profile-changes')
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'profiles',
+              filter: `id=eq.${userId}`
+            },
+            (payload) => {
+              if (!mounted) return;
+              console.log('Profile updated:', payload);
+              
+              // Update userData with the new data
+              const newData = payload.new;
+              if (newData) {
+                const mapped: UserData = {
+                  id: newData.id,
+                  role: newData.role || 'user',
+                  alumniId: newData.alumni_id || '',
+                  status: newData.status || 'pending',
+                  rejectionComments: newData.rejection_comments || '',
+                  paymentReceipt: newData.payment_receipt || '',
+                  personal: {
+                    ...(newData.personal ?? {
+                      firstName: '',
+                      lastName: '',
+                      passOutYear: '',
+                      dob: '',
+                      bloodGroup: '',
+                      email: '',
+                      altEmail: '',
+                      highestQualification: '',
+                      specialization: '',
+                      profilePhoto: '',
+                    }),
+                    profilePhoto: newData.profile_photo || newData.personal?.profilePhoto || '',
+                  },
+                  contact: newData.contact ?? {
+                    address: '',
+                    city: '',
+                    state: '',
+                    pincode: '',
+                    country: '',
+                    mobile: '',
+                    telephone: '',
+                  },
+                  experience: newData.experience ?? {
+                    employee: [],
+                    entrepreneur: [],
+                    isOpenToWork: false,
+                    openToWorkDetails: {
+                      technicalSkills: '',
+                      certifications: '',
+                      softSkills: '',
+                      other: '',
+                    },
+                  },
+                };
+                
+                setUserData(mapped);
+                
+                // Show notification if status changed to verified
+                if (newData.status === 'verified' && userData?.status !== 'verified') {
+                  setShowVerificationNotification(true);
+                  // Auto-hide notification after 5 seconds
+                  setTimeout(() => {
+                    setShowVerificationNotification(false);
+                  }, 5000);
+                }
+              }
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        console.error('Profile subscription failed', err);
       }
     };
 
@@ -267,88 +367,6 @@ const App: React.FC = () => {
       console.error('onAuthStateChange subscribe failed', err);
     }
 
-    // Setup real-time profile updates subscription
-    const setupProfileSubscription = (userId: string) => {
-      try {
-        profileSubscription = supabase
-          .channel('profile-changes')
-          .on(
-            'postgres_changes',
-            {
-              event: 'UPDATE',
-              schema: 'public',
-              table: 'profiles',
-              filter: `id=eq.${userId}`
-            },
-            (payload) => {
-              if (!mounted) return;
-              console.log('Profile updated:', payload);
-              
-              // Update userData with the new data
-              const newData = payload.new;
-              if (newData) {
-                const mapped: UserData = {
-                  id: newData.id,
-                  role: newData.role || 'user',
-                  alumniId: newData.alumni_id || '',
-                  status: newData.status || 'pending',
-                  paymentReceipt: newData.payment_receipt || '',
-                  personal: {
-                    ...(newData.personal ?? {
-                      firstName: '',
-                      lastName: '',
-                      passOutYear: '',
-                      dob: '',
-                      bloodGroup: '',
-                      email: '',
-                      altEmail: '',
-                      highestQualification: '',
-                      specialization: '',
-                      profilePhoto: '',
-                    }),
-                    profilePhoto: newData.profile_photo || newData.personal?.profilePhoto || '',
-                  },
-                  contact: newData.contact ?? {
-                    address: '',
-                    city: '',
-                    state: '',
-                    pincode: '',
-                    country: '',
-                    mobile: '',
-                    telephone: '',
-                  },
-                  experience: newData.experience ?? {
-                    employee: [],
-                    entrepreneur: [],
-                    isOpenToWork: false,
-                    openToWorkDetails: {
-                      technicalSkills: '',
-                      certifications: '',
-                      softSkills: '',
-                      other: '',
-                    },
-                  },
-                };
-                
-                setUserData(mapped);
-                
-                // Show notification if status changed to verified
-                if (newData.status === 'verified' && userData?.status !== 'verified') {
-                  setShowVerificationNotification(true);
-                  // Auto-hide notification after 5 seconds
-                  setTimeout(() => {
-                    setShowVerificationNotification(false);
-                  }, 5000);
-                }
-              }
-            }
-          )
-          .subscribe();
-      } catch (err) {
-        console.error('Profile subscription failed', err);
-      }
-    };
-
     return () => {
       mounted = false;
       try {
@@ -421,24 +439,52 @@ const App: React.FC = () => {
 
   // registration handler (upload receipt + insert profile)
   const handleRegister = async (receiptFile: File) => {
-    if (!session?.user) return alert("You must be logged in to register.");
+    console.log('=== REGISTRATION STARTED ===');
+    console.log('User ID:', session?.user?.id);
+    console.log('User Email:', session?.user?.email);
+    console.log('Receipt File:', receiptFile?.name, receiptFile?.size, 'bytes');
+    
+    if (!session?.user) {
+      console.error('REGISTRATION FAILED: No session user');
+      return alert("You must be logged in to register.");
+    }
+    
     if (!registrationFormData.personal.passOutYear) {
+      console.error('REGISTRATION FAILED: Missing pass out year');
       alert("Year of Pass Out is required to generate an ID.");
       setCurrentStep(1);
       return;
     }
 
+    console.log('Registration Form Data:', JSON.stringify({
+      personal: {
+        ...registrationFormData.personal,
+        profilePhoto: registrationFormData.personal.profilePhoto ? '[BASE64_DATA]' : 'none'
+      },
+      contact: registrationFormData.contact,
+      experience: {
+        ...registrationFormData.experience,
+        employee: registrationFormData.experience.employee.length + ' entries',
+        entrepreneur: registrationFormData.experience.entrepreneur.length + ' entries'
+      }
+    }, null, 2));
+
+    try {
     let profilePhotoUrl = '';
     
     // Upload profile photo if exists
     if (registrationFormData.personal.profilePhoto && registrationFormData.personal.profilePhoto.startsWith('data:')) {
+      console.log('>>> Step 1: Uploading profile photo...');
       try {
         // Convert base64 to blob
         const response = await fetch(registrationFormData.personal.profilePhoto);
         const blob = await response.blob();
+        console.log('Profile photo blob size:', blob.size, 'bytes, type:', blob.type);
         
         // Upload to Supabase storage
         const photoFileName = `${session.user.id}/profile_${Date.now()}.jpg`;
+        console.log('Uploading to photos bucket:', photoFileName);
+        
         const { error: photoUploadError } = await supabase.storage
           .from('photos')
           .upload(photoFileName, blob, {
@@ -447,83 +493,141 @@ const App: React.FC = () => {
           });
         
         if (photoUploadError) {
-          console.warn('Failed to upload profile photo:', photoUploadError);
+          console.error('PHOTO UPLOAD FAILED:', {
+            error: photoUploadError,
+            message: photoUploadError.message,
+            statusCode: (photoUploadError as any).statusCode,
+            details: JSON.stringify(photoUploadError)
+          });
           // Don't fail the registration, just warn
         } else {
           // Get public URL for the uploaded photo
           const { data: photoUrlData } = supabase.storage.from('photos').getPublicUrl(photoFileName);
           profilePhotoUrl = photoUrlData?.publicUrl || '';
+          console.log('✓ Profile photo uploaded successfully:', profilePhotoUrl);
         }
       } catch (error) {
-        console.warn('Error processing profile photo:', error);
+        console.error('PHOTO PROCESSING ERROR:', error);
         // Don't fail registration for photo upload issues
       }
+    } else {
+      console.log('>>> Step 1: No profile photo to upload');
     }
 
     // upload receipt
+    console.log('>>> Step 2: Uploading payment receipt...');
     const fileExt = receiptFile.name.split('.').pop();
     const fileName = `${session.user.id}/${Date.now()}.${fileExt}`;
+    console.log('Receipt file name:', fileName, 'extension:', fileExt);
+    
     const { error: uploadError } = await supabase.storage.from('receipts').upload(fileName, receiptFile);
 
     if (uploadError) {
+      console.error('RECEIPT UPLOAD FAILED:', {
+        error: uploadError,
+        message: uploadError.message,
+        statusCode: (uploadError as any).statusCode,
+        fileName: fileName,
+        fileSize: receiptFile.size,
+        details: JSON.stringify(uploadError)
+      });
       alert('Failed to upload payment receipt. Please try again.');
       return;
     }
 
+    console.log('✓ Receipt uploaded successfully');
+    
     // Use public url (works if bucket is public)
     const { data: urlData } = supabase.storage.from('receipts').getPublicUrl(fileName);
     const publicUrl = urlData?.publicUrl || '';
+    console.log('Receipt public URL:', publicUrl);
 
     const year = registrationFormData.personal.passOutYear;
+    console.log('>>> Step 3: Validating year and checking if user exists...');
+    console.log('Pass out year:', year);
+    
     if (!/^\d{4}$/.test(year)) {
+      console.error('INVALID YEAR FORMAT:', year);
       alert('Invalid pass out year.');
       return;
     }
 
-    // Helper to compute next sequential number for the year
+    // Check if user already exists (e.g., rejected user resubmitting)
+    const { data: existingProfile, error: checkError } = await supabase
+      .from('profiles')
+      .select('id, alumni_id, status, profile_photo')
+      .eq('id', session.user.id)
+      .single();
+    
+    const isResubmission = existingProfile && existingProfile.status === 'rejected';
+    console.log('User exists:', !!existingProfile, 'Status:', existingProfile?.status);
+    console.log('Existing profile photo:', existingProfile?.profile_photo);
+    console.log('Is resubmission:', isResubmission);
+    
+    // If resubmitting without a new photo, preserve the existing one
+    if (isResubmission && !profilePhotoUrl && existingProfile.profile_photo) {
+      profilePhotoUrl = existingProfile.profile_photo;
+      console.log('Preserving existing profile photo:', profilePhotoUrl);
+    }
+
+    // Helper to compute next sequential number for the year using database function
     const computeNextAlumniId = async (): Promise<string> => {
-      // Find the latest alumni_id for this year
-      const likePattern = `DTEAA-${year}-%`;
-      const res = await supabase
-        .from('profiles')
-        .select('alumni_id')
-        .ilike('alumni_id', likePattern)
-        .order('alumni_id', { ascending: false })
-        .limit(1);
+      console.log('═══════════════════════════════════════');
+      console.log('🔍 COMPUTING NEXT ALUMNI ID');
+      console.log('Year:', year);
+      console.log('═══════════════════════════════════════');
+      
+      // Call the database function that bypasses RLS to get the next ID
+      const { data, error } = await supabase.rpc('get_next_alumni_id', {
+        pass_out_year: year
+      });
 
-      if (res.error) {
-        console.warn('Error finding latest alumni_id:', res.error);
+      if (error) {
+        console.error('❌ Error calling get_next_alumni_id function:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        console.log('⚠️ Using fallback ID: DTEAA-' + year + '-0001');
+        // Fallback to basic sequential if function fails
         return `DTEAA-${year}-0001`;
       }
 
-      const row = res.data && res.data[0];
-      if (!row || !row.alumni_id) {
-        return `DTEAA-${year}-0001`;
-      }
-
-      // parse last 4 digits and increment
-      const parts = row.alumni_id.split('-');
-      const last = parts[parts.length - 1];
-      const num = parseInt(last, 10);
-      const next = Number.isFinite(num) ? num + 1 : 1;
-      return `DTEAA-${year}-${String(next).padStart(4, '0')}`;
+      const nextId = data as string;
+      console.log('✅ Database function returned:', nextId);
+      console.log('═══════════════════════════════════════');
+      return nextId;
     };
 
     // Try inserting with retry in case of unique constraint conflict
-    const MAX_ATTEMPTS = 5;
+    console.log('>>> Step 4: Inserting profile into database...');
+    const MAX_ATTEMPTS = 15;
     let attempt = 0;
     let insertedData: any = null;
+    
     while (attempt < MAX_ATTEMPTS) {
       attempt += 1;
+      console.log('\n');
+      console.log('╔══════════════════════════════════════════════╗');
+      console.log(`║  DATABASE INSERT ATTEMPT #${attempt}/${MAX_ATTEMPTS}               ║`);
+      console.log('╚══════════════════════════════════════════════╝');
+      
+      // Get the next sequential alumni ID from database function
+      // The function handles finding the correct next ID even on retries
       const alumniId = await computeNextAlumniId();
+      
+      console.log('\n🎯 ATTEMPTING DATABASE OPERATION WITH:');
+      console.log('   Alumni ID:', alumniId);
+      console.log('   User ID:', session.user.id);
+      console.log('   Email:', session.user.email);
+      console.log('   Is resubmission:', isResubmission);
 
-      // Prepare row to insert (use snake_case columns to match DB)
+      // Prepare row data (use snake_case columns to match DB)
       // IMPORTANT: enforce the current authenticated uid here to satisfy RLS
       const profileRow = {
         id: session.user.id,
-        alumni_id: alumniId,
+        alumni_id: isResubmission ? existingProfile.alumni_id : alumniId, // Keep existing alumni_id for resubmissions
         payment_receipt: publicUrl,
         profile_photo: profilePhotoUrl,
+        status: 'pending', // Reset status to pending for resubmissions
+        rejection_comments: null, // Clear rejection comments
         personal: {
           ...registrationFormData.personal,
           profilePhoto: profilePhotoUrl // Update the personal object with the URL
@@ -532,41 +636,112 @@ const App: React.FC = () => {
         experience: registrationFormData.experience
       };
 
-      const { data: insertRes, error: insertError } = await supabase
-        .from('profiles')
-        .insert(profileRow)
-        .select()
-        .single();
+      console.log('Profile row to save:', {
+        id: profileRow.id,
+        alumni_id: profileRow.alumni_id,
+        payment_receipt: profileRow.payment_receipt ? 'URL_PROVIDED' : 'NO_URL',
+        profile_photo: profileRow.profile_photo ? 'URL_PROVIDED' : 'NO_URL',
+        personal_fields: Object.keys(profileRow.personal),
+        contact_fields: Object.keys(profileRow.contact),
+        experience_summary: {
+          employee_count: profileRow.experience.employee.length,
+          entrepreneur_count: profileRow.experience.entrepreneur.length,
+          isOpenToWork: profileRow.experience.isOpenToWork
+        }
+      });
+
+      console.log(`\n📤 Sending ${isResubmission ? 'UPDATE' : 'INSERT'} request to database...`);
+      
+      // Use UPDATE for resubmissions, INSERT for new users
+      let insertRes, insertError;
+      if (isResubmission) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .update(profileRow)
+          .eq('id', session.user.id)
+          .select()
+          .single();
+        insertRes = data;
+        insertError = error;
+      } else {
+        const { data, error } = await supabase
+          .from('profiles')
+          .insert(profileRow)
+          .select()
+          .single();
+        insertRes = data;
+        insertError = error;
+      }
 
       if (insertError) {
+        console.log(`\n❌ ${isResubmission ? 'UPDATE' : 'INSERT'} FAILED`);
         // If conflict on unique alumni_id, retry (someone else might have created the same id just now)
         const msg = (insertError as any).message || JSON.stringify(insertError);
-        console.warn(`Insert attempt #${attempt} failed: ${msg}`);
+        
+        console.error(`DATABASE OPERATION FAILED - Attempt #${attempt}:`, {
+          operation: isResubmission ? 'UPDATE' : 'INSERT',
+          error: insertError,
+          errorCode: insertError.code,
+          errorMessage: insertError.message,
+          errorDetails: (insertError as any).details,
+          errorHint: (insertError as any).hint,
+          statusCode: (insertError as any).statusCode,
+          fullError: JSON.stringify(insertError, null, 2)
+        });
 
         // detect unique constraint violation (Postgres unique violation)
         // error code for unique constraint is usually "23505" for Postgres; supabase-js error shape may vary
         const isUniqueConflict = insertError.code === '23505' || /unique/i.test(msg) || /already exists/i.test(msg);
-        if (isUniqueConflict && attempt < MAX_ATTEMPTS) {
+        
+        // Only retry on unique conflicts for new inserts (not resubmissions)
+        if (isUniqueConflict && !isResubmission && attempt < MAX_ATTEMPTS) {
+          console.log('\n⚠️ UNIQUE CONSTRAINT VIOLATION');
+          console.log('The alumni_id', profileRow.alumni_id, 'already exists in the database');
+          console.log(`Waiting ${200 * attempt}ms before retry...`);
+          console.log('Will regenerate a fresh alumni_id on next attempt...');
           // brief wait then retry
           await new Promise(r => setTimeout(r, 200 * attempt));
           continue;
         } else {
-          alert('Failed to save your registration. Please try again later.');
+          console.error('REGISTRATION FAILED - Final error after all attempts or non-retryable error');
+          console.error('Error type:', isUniqueConflict ? 'UNIQUE_CONSTRAINT' : 'OTHER');
+          console.error('Possible causes:');
+          console.error('1. RLS (Row Level Security) policy blocking insert');
+          console.error('2. Missing required columns in database');
+          console.error('3. Data type mismatch');
+          console.error('4. User does not have INSERT permission');
+          console.error('5. Database constraint violation');
+          
+          alert(`Failed to save your registration. Error: ${insertError.message || 'Unknown error'}. Please contact support with this error code: ${insertError.code || 'NO_CODE'}`);
+          
           // cleanup uploaded file if desired
           try {
+            console.log('Cleaning up uploaded receipt...');
             await supabase.storage.from('receipts').remove([fileName]);
-          } catch (e) { /* ignore */ }
+            console.log('✓ Receipt cleanup successful');
+          } catch (e) {
+            console.error('Receipt cleanup failed:', e);
+          }
           return;
         }
       }
 
       if (insertRes) {
+        console.log('\n🎉 SUCCESS! Profile inserted successfully!');
+        console.log('═══════════════════════════════════════');
+        console.log('📋 FINAL INSERTED DATA:');
+        console.log('   User ID:', insertRes.id);
+        console.log('   Alumni ID:', insertRes.alumni_id);
+        console.log('   Status:', insertRes.status);
+        console.log('   Email:', insertRes.personal?.email || 'N/A');
+        console.log('═══════════════════════════════════════');
         insertedData = insertRes;
         break;
       }
     }
 
     if (insertedData) {
+      console.log('>>> Step 5: Finalizing registration...');
       // Map DB fields to frontend expected shape (same as fetchUserProfile)
       const mapped: UserData = {
         id: insertedData.id,
@@ -581,12 +756,34 @@ const App: React.FC = () => {
 
       setUserData(mapped);
       setIsRegistered(true);
+      console.log('✓✓✓ REGISTRATION COMPLETED SUCCESSFULLY! ✓✓✓');
+      console.log('Alumni ID:', mapped.alumniId);
+      console.log('Status:', mapped.status);
+      console.log('=== END OF REGISTRATION ===');
     } else {
-      alert('Failed to save your registration after multiple attempts. Please try again.');
+      console.error('REGISTRATION FAILED: No data inserted after all attempts');
+      console.error('This should not happen - check the retry logic');
+      alert('Failed to save your registration after multiple attempts. Please try again or contact support.');
       // cleanup uploaded file
       try {
+        console.log('Cleaning up uploaded receipt...');
         await supabase.storage.from('receipts').remove([fileName]);
-      } catch (e) { /* ignore */ }
+        console.log('✓ Receipt cleanup successful');
+      } catch (e) {
+        console.error('Receipt cleanup failed:', e);
+      }
+      console.log('=== END OF REGISTRATION (FAILED) ===');
+    }
+    } catch (unexpectedError: any) {
+      console.error('!!! UNEXPECTED ERROR DURING REGISTRATION !!!');
+      console.error('Error type:', typeof unexpectedError);
+      console.error('Error name:', unexpectedError?.name);
+      console.error('Error message:', unexpectedError?.message);
+      console.error('Error stack:', unexpectedError?.stack);
+      console.error('Full error object:', unexpectedError);
+      
+      alert(`An unexpected error occurred during registration: ${unexpectedError?.message || 'Unknown error'}. Please check the console for details and contact support.`);
+      console.log('=== END OF REGISTRATION (UNEXPECTED ERROR) ===');
     }
   };
 
@@ -619,10 +816,54 @@ const App: React.FC = () => {
     }
   };
 
+  const handleReject = async (userId: string, comments: string) => {
+    if (userData?.role !== 'admin') return alert("Permission denied.");
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ 
+          status: 'rejected',
+          rejection_comments: comments
+        })
+        .eq('id', userId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Reject update error', error);
+        alert(`Failed to reject user ${userId}. (${error.message || error.details || 'unknown error'})`);
+        return;
+      }
+
+      // Refresh the list so AdminDashboard sees latest data
+      await fetchAllUsers();
+
+      alert(`User ${userId} has been rejected. They will see your comments when they log in.`);
+    } catch (err) {
+      console.error('handleReject error', err);
+      alert(`Failed to reject user ${userId}.`);
+    }
+  };
+
   const renderContent = () => {
     if (loading) return <div className="text-center p-12 text-lg font-medium text-[#555555]">Loading session...</div>;
-    if (isAdminView) return <AdminDashboard users={allUsers} onVerify={handleVerify} />;
+    if (isAdminView) return <AdminDashboard users={allUsers} onVerify={handleVerify} onReject={handleReject} />;
     if (!session) return <LoginPage />;
+    
+    // If user registration was rejected, show them the payment page with rejection comments
+    if (isRegistered && userData?.status === 'rejected') {
+      return (
+        <RegistrationForm
+          userData={userData}
+          setUserData={setUserData}
+          currentStep={5} // Go directly to payment step
+          setCurrentStep={setCurrentStep}
+          onRegister={handleRegister}
+        />
+      );
+    }
+    
     if (!isRegistered) {
       return (
         <RegistrationForm
